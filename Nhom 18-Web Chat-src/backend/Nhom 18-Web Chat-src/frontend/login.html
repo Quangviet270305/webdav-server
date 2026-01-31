@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat System - Đăng nhập</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>">
+    
+    <style>
+        /* === THÊM CSS CHO THÔNG BÁO (TOAST) === */
+        #toast-box { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+        .toast {
+            min-width: 250px; margin-bottom: 10px; padding: 15px 20px;
+            border-radius: 8px; color: white; font-size: 0.95rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center;
+            animation: slideIn 0.3s ease, fadeOut 0.5s 3s forwards; opacity: 1;
+        }
+        .toast.error { background: #e53e3e; border-left: 5px solid #9b2c2c; }
+        .toast.success { background: #48bb78; border-left: 5px solid #2f855a; }
+        .toast-icon { margin-right: 10px; font-size: 1.2rem; }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
+    </style>
+</head>
+<body>
+    <div id="toast-box"></div>
+
+    <div class="container">
+        <div class="card">
+            <h1 class="logo">🔐 Đăng nhập</h1>
+            <p class="subtitle">Chào mừng trở lại!</p>
+            
+            <form id="login-form" onsubmit="return false;">
+                
+                <div class="form-group">
+                    <label for="username">Tên đăng nhập</label>
+                    <input type="text" id="username" class="input" placeholder="Nhập username..." autocomplete="username">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Mật khẩu</label>
+                    <input type="password" id="password" class="input" placeholder="Nhập mật khẩu..." autocomplete="current-password">
+                </div>
+                
+                <div class="demo-account">
+                    <h4>Tài khoản demo:</h4>
+                    <p><strong>Username:</strong> admin</p>
+                    <p><strong>Password:</strong> admin123</p>
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <button type="submit" class="btn btn-primary" id="login-btn">
+                        <span>🚀</span> Đăng nhập
+                    </button>
+                </div>
+
+            </form>
+            <div style="margin-top: 20px;">
+                <p>Chưa có tài khoản? 
+                    <span class="link" onclick="location.href='register.html'">Đăng ký ngay</span>
+                </p>
+                <p>
+                    <span class="link" onclick="location.href='index.html'">← Quay lại trang chủ</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 1. Dọn dẹp session cũ để tránh lỗi
+        sessionStorage.clear();
+        localStorage.clear();
+
+        let ws = null;
+        let isProcessing = false; // "Chốt khóa" chống click đúp
+
+        // === HÀM HIỆN THÔNG BÁO ===
+        function showToast(message, type = 'error') {
+            const box = document.getElementById('toast-box');
+            const toast = document.createElement('div');
+            const icon = type === 'success' ? '✅' : '❌';
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span class="toast-icon">${icon}</span> ${message}`;
+            box.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
+
+        // === KẾT NỐI WEBSOCKET ===
+        function connectWebSocket() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return ws;
+            }
+            new WebSocket("wss://TEN-APP.onrender.com")
+
+            
+            ws.onopen = () => console.log('✅ Đã kết nối tới server');
+            ws.onclose = () => {
+                console.log('📡 Đã ngắt kết nối');
+                setTimeout(connectWebSocket, 1000); // Thử kết nối lại
+            };
+            return ws;
+        }
+        
+        // === HÀM XỬ LÝ ĐĂNG NHẬP ===
+        function handleLogin(e) {
+            // Chặn load lại trang mặc định
+            if(e) e.preventDefault();
+
+            // Nếu đang xử lý rồi thì DỪNG LẠI NGAY (Fix lỗi 2 thông báo)
+            if (isProcessing) return;
+
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value.trim();
+
+            if (!u || !p) {
+                showToast("Vui lòng nhập đủ thông tin!", "error");
+                return;
+            }
+
+            // --- BẮT ĐẦU KHÓA ---
+            isProcessing = true;
+            const btn = document.getElementById('login-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<div class="loading"></div> Đang kết nối...';
+            btn.disabled = true;
+
+            const socket = connectWebSocket();
+            
+            // Hàm gửi dữ liệu
+            const sendData = () => {
+                socket.send(JSON.stringify({
+                    type: 'login',
+                    username: u,
+                    password: p,
+                    room: 'general'
+                }));
+            };
+
+            if (socket.readyState === WebSocket.OPEN) {
+                sendData();
+            } else {
+                socket.onopen = sendData;
+                socket.onerror = () => {
+                    showToast("Không kết nối được Server!", "error");
+                    resetButton(btn, originalText);
+                };
+            }
+
+            // Nhận phản hồi
+            socket.onmessage = function(e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    
+                    if (data.type === 'login_success') {
+                        showToast("Đăng nhập thành công!", "success");
+                        
+                        // Dùng sessionStorage để buộc đăng nhập lại khi tắt trình duyệt
+                        sessionStorage.setItem('username', data.username);
+                        sessionStorage.setItem('role', data.role);
+                        
+                        // Chờ 1s rồi chuyển trang
+                        setTimeout(() => window.location.href = 'chat.html', 1000);
+                        
+                    } else if (data.type === 'login_fail' || data.type === 'error') {
+                        showToast(data.message || 'Đăng nhập thất bại', "error");
+                        resetButton(btn, originalText);
+                    }
+                } catch (err) {
+                    console.error('Lỗi:', err);
+                    resetButton(btn, originalText);
+                }
+            };
+        }
+
+        function resetButton(btn, originalText) {
+            isProcessing = false; // Mở khóa
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+        
+        // === GÁN SỰ KIỆN SUBMIT FORM ===
+        // Chỉ cần dòng này là xử lý cả Enter lẫn Click nút
+        document.getElementById('login-form').addEventListener('submit', handleLogin);
+        
+        // Focus vào ô username khi vào trang
+        document.getElementById('username').focus();
+        
+        // Khởi tạo kết nối ngầm
+        connectWebSocket();
+    </script>
+</body>
+</html>
