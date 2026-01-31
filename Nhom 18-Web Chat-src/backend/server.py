@@ -212,10 +212,13 @@ async def index(request):
     return web.FileResponse("./static/index.html")
 
 
+
 # ================= APP =================
 app = web.Application()
 app.router.add_get("/", index)
 app.router.add_get("/ws", ws_handler)
+app.router.add_static("/static", "./static")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8765))
